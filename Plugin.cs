@@ -8,6 +8,7 @@ using HarmonyLib;
 using Steamworks;
 using UnityEngine;
 using System.Collections;
+using TMPro;
 
 namespace MorePlayers {
 	[BepInAutoPlugin]
@@ -15,6 +16,9 @@ namespace MorePlayers {
 		private readonly Harmony harmony = new Harmony(Id);
 		public static MPPlugin Instance;
 
+		public static GameObject maxPlayerPrefab = null;
+		public static TextMeshProUGUI numTMP = null;
+		
 		private ConfigEntry<int> maxPlayers;
 
 		private void Awake() {
@@ -27,24 +31,85 @@ namespace MorePlayers {
 			harmony.PatchAll();			
 			Logger.LogInfo($"Plugin {Id} is loaded!");
 		}
-		
-		public static int getMaxPlayers() {
-			return MPPlugin.Instance.maxPlayers.Value;
+
+		private void Start() {
+			// Select UI	
+			GameObject optionWindow = OptionsMenu.options.optionWindow;
+			GameObject xspd = optionWindow.transform.Find("Content/OptionMask/ButtonParent/Camera Controls/XSpeed").gameObject;
+			
+			maxPlayerPrefab = UnityEngine.Object.Instantiate<GameObject>(xspd);
+			maxPlayerPrefab.name = "Max Players (Prefab)";
+			
+			TextMeshProUGUI title = maxPlayerPrefab.transform.GetChild(0).GetComponent<TextMeshProUGUI>();
+			title.text = "Max Players";
+
+			DontDestroyOnLoad(maxPlayerPrefab);
+		}
+
+		public static void attachSelect() {
+			if (maxPlayerPrefab != null && numTMP == null) {
+				GameObject mapCanv = GameObject.Find("MapCanvas");
+				GameObject saveSlot = mapCanv.transform.Find("MenuScreen/Multiplayer/Contents/Host Game /SaveSlot").gameObject;
+				
+				GameObject maxPlayerSelect = UnityEngine.Object.Instantiate<GameObject>(maxPlayerPrefab);
+				maxPlayerSelect.name = "Max Players";
+				maxPlayerSelect.transform.SetParent(saveSlot.transform);
+				maxPlayerSelect.transform.localPosition = new Vector3(-7.5f, -137.5f, 0); // Copied from Host button
+				maxPlayerSelect.transform.localScale = new Vector3(.8f, .8f, .8f); // Copied from Host button
+				
+				numTMP = maxPlayerSelect.transform.Find("VolumeSlider/Background/Sound Effect").gameObject.GetComponent<TextMeshProUGUI>();
+				numTMP.text = CustomNetworkManager.manage.maxConnections.ToString();
+				
+				InvButton upBtn = maxPlayerSelect.transform.Find("VolumeSlider/UpButton").gameObject.GetComponent<InvButton>();
+				InvButton downBtn = maxPlayerSelect.transform.Find("VolumeSlider/DownButton").gameObject.GetComponent<InvButton>();
+
+				upBtn.onButtonPress.AddListener(() => changePlayers(1));
+				downBtn.onButtonPress.AddListener(() => changePlayers(-1));
+				// TODO: add fade
+			}
+		}
+
+		public static int clampPlayers(int nv) {
+			if (nv > 32) nv = 32;
+			else if (nv < 2) nv = 2;
+			
+			return nv;
+		}
+
+		public static void changePlayers(int diff) {
+			int nv = clampPlayers(getMaxPlayers() + diff);
+
+			Instance.maxPlayers.Value = nv;
+			CustomNetworkManager.manage.maxConnections = nv;
+			if (numTMP != null)
+				numTMP.text = nv.ToString();
 		}
 		
-		public static void Log(string msg) {
-			MPPlugin.Instance.Logger.LogInfo(msg);
+		public static int getMaxPlayers() {
+			return Instance.maxPlayers.Value;
+		}
+		
+		public static void Log(System.Object msg) {
+			Instance.Logger.LogInfo(msg);
 		}
 	}
 	
 	// TODO: Patch NetworkPlayersManager::refreshButtons
+	
+	[HarmonyPatch(typeof(MultiplayerLoadWindow), "OnEnable")]
+	public static class MPLoadPatch {
+		[HarmonyPostfix]
+        static void EnablePostfix(ref MultiplayerLoadWindow __instance) {
+			MPPlugin.attachSelect();
+		}
+	}
 	
 	[HarmonyPatch(typeof(CustomNetworkManager), "OnEnable")]
 	public static class NetworkManagerStartupPatch {
 		[HarmonyPostfix]
         static void EnablePostfix(ref CustomNetworkManager __instance) {
 			int pre = __instance.maxConnections;
-			__instance.maxConnections = MPPlugin.getMaxPlayers();
+			__instance.maxConnections = MPPlugin.clampPlayers(MPPlugin.getMaxPlayers());
 			MPPlugin.Log($"Setting maxConnections {pre} to {__instance.maxConnections}");
 		}
 	}

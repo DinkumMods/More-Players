@@ -3,7 +3,7 @@
 		<TargetFramework>net472</TargetFramework>
 		<AssemblyName>MorePlayers</AssemblyName>
 		<Description>More Players in Dinkum Multiplayer</Description>
-		<Version>0.1.0</Version>
+		<Version>0.2.0</Version>
 		<Authors>EndOfFile</Authors>
 		
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>

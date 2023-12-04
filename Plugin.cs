@@ -20,6 +20,7 @@ namespace MorePlayers {
 		public static TextMeshProUGUI numTMP = null;
 		
 		private ConfigEntry<int> maxPlayers;
+		private ConfigEntry<int> sleepPercentage;
 
 		private void Awake() {
 			Instance = this;
@@ -28,6 +29,11 @@ namespace MorePlayers {
                                      8,
                                      "Amount of players allowed to join a world");
 			
+            sleepPercentage = Config.Bind("General",
+                                     "sleepPercentage",
+                                     70,
+                                     "Required percentage of players to sleep for next day");
+
 			harmony.PatchAll();			
 			Logger.LogInfo($"Plugin {Id} is loaded!");
 		}
@@ -54,8 +60,8 @@ namespace MorePlayers {
 				GameObject maxPlayerSelect = UnityEngine.Object.Instantiate<GameObject>(maxPlayerPrefab);
 				maxPlayerSelect.name = "Max Players";
 				maxPlayerSelect.transform.SetParent(saveSlot.transform);
-				maxPlayerSelect.transform.localPosition = new Vector3(-7.5f, -137.5f, 0); // Copied from Host button
-				maxPlayerSelect.transform.localScale = new Vector3(.8f, .8f, .8f); // Copied from Host button
+				maxPlayerSelect.transform.localPosition = new Vector3(-7.5f, -137.5f, 0);
+				maxPlayerSelect.transform.localScale = new Vector3(.8f, .8f, .8f);
 				
 				numTMP = maxPlayerSelect.transform.Find("VolumeSlider/Background/Sound Effect").gameObject.GetComponent<TextMeshProUGUI>();
 				numTMP.text = CustomNetworkManager.manage.maxConnections.ToString();
@@ -92,7 +98,17 @@ namespace MorePlayers {
 		public static void Log(System.Object msg) {
 			Instance.Logger.LogInfo(msg);
 		}
+		
+		public static int getMinSleepAmount(int forPlayers) {
+			int perc = Mathf.Clamp(Instance.sleepPercentage.Value, 1, 100);
+			return (int)(forPlayers * perc / 100f);
+		}
+		
+		public static int getMinSleepAmount() {
+			return getMinSleepAmount(NetworkNavMesh.nav.getPlayerCount());
+		}
 	}
+	
 	
 	// TODO: Patch NetworkPlayersManager::refreshButtons
 	
@@ -113,7 +129,7 @@ namespace MorePlayers {
 			MPPlugin.Log($"Setting maxConnections {pre} to {__instance.maxConnections}");
 		}
 	}
-	
+	/*
 	[HarmonyPatch(typeof(CustomNetworkManager), "createLobbyBeforeConnection")]
 	public static class NetworkManagerPlayerPatch {
 		static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) {
@@ -134,7 +150,7 @@ namespace MorePlayers {
 			return insnList.AsEnumerable();
 		}
 	}
-	
+	*/
 	[HarmonyPatch(typeof(SteamLobby), "OnLobbyEntered")]
 	public static class LobbyCountPatch {
 		static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) {
@@ -151,10 +167,27 @@ namespace MorePlayers {
 						CodeInstruction.LoadField(typeof(SteamLobby), "currentLobby"),
 						new CodeInstruction(OpCodes.Ldstr, "noOfPlayers"),
 						new CodeInstruction(OpCodes.Ldstr, "1"), // to avoid member call
-						new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(SteamMatchmaking), "SetLobbyData")),
+						CodeInstruction.Call(typeof(SteamMatchmaking), "SetLobbyData"),
 						new CodeInstruction(OpCodes.Pop)
 					)
 					.InstructionEnumeration();
+		}
+	}
+	
+	[HarmonyPatch(typeof(NetworkNavMesh), "checkSleepingList")]
+	public static class NetworkNavMeshSleepingPatch {
+		[HarmonyPrefix]
+        static bool CheckSleepingListPostfix(ref NetworkNavMesh __instance) {
+			int playerCount = __instance.getPlayerCount();
+			if (playerCount != 0 && 
+				__instance.sleepingChars.Count >= MPPlugin.getMinSleepAmount(playerCount) && 
+				!RealWorldTimeLight.time.underGround && !RealWorldTimeLight.time.offIsland && 
+				!TownManager.manage.checkIfInMovingBuildingForSleep()) 
+			{
+				WorldManager.Instance.nextDay();
+				__instance.sleepingChars.Clear();
+			}
+			return false; // Don't exec original
 		}
 	}
 }

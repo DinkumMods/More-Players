@@ -101,7 +101,9 @@ namespace MorePlayers {
 		
 		public static int getMinSleepAmount(int forPlayers) {
 			int perc = Mathf.Clamp(Instance.sleepPercentage.Value, 1, 100);
-			return (int)(forPlayers * perc / 100f);
+			int count = (int)Mathf.Ceil(forPlayers * perc / 100f);
+
+			return Mathf.Clamp(count, 1, forPlayers);
 		}
 		
 		public static int getMinSleepAmount() {
